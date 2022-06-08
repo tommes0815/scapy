@@ -398,7 +398,7 @@ class RadioTap(Packet):
         ConditionalField(
             ReversePadField(
                 FlagsField("knownMCS", None, -8, _rt_knownmcs),
-                4
+                2
             ),
             lambda pkt: pkt.present and pkt.present.MCS),
         ConditionalField(
@@ -1192,7 +1192,7 @@ class Dot11EltRSN(Dot11Elt):
         BitField("no_pairwise", 0, 1),
         BitField("pre_auth", 0, 1),
         BitField("reserved", 0, 8),
-        # Theorically we could use mfp_capable/mfp_required to know if those
+        # Theoretically we could use mfp_capable/mfp_required to know if those
         # fields are present, but some implementations poorly implement it.
         # In practice, do as wireshark: guess using offset.
         ConditionalField(

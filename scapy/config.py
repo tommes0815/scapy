@@ -25,7 +25,7 @@ from scapy import VERSION
 from scapy.base_classes import BasePacket
 from scapy.consts import DARWIN, WINDOWS, LINUX, BSD, SOLARIS
 from scapy.error import log_scapy, warning, ScapyInvalidPlatformException
-from scapy.modules import six
+from scapy.libs import six
 from scapy.themes import NoTheme, apply_ipython_style
 
 from scapy.compat import (
@@ -47,7 +47,10 @@ from types import ModuleType
 
 if TYPE_CHECKING:
     # Do not import at runtime
+    import scapy.as_resolvers
     from scapy.packet import Packet
+    import scapy.asn1.asn1
+    import scapy.asn1.mib
 
 ############
 #  Config  #
@@ -272,6 +275,10 @@ class LayersList(List[Type['scapy.packet.Packet']]):
         result = []
         # This import may feel useless, but it is required for the eval below
         import scapy  # noqa: F401
+        try:
+            import builtins  # noqa: F401
+        except ImportError:
+            import __builtin__  # noqa: F401
         for lay in self.ldict:
             doc = eval(lay).__doc__
             result.append((lay, doc.strip().split("\n")[0] if doc else lay))
@@ -694,8 +701,10 @@ class Conf(ConfClass):
     iface = Interceptor("iface", None, _iface_changer)  # type: 'scapy.interfaces.NetworkInterface'  # type: ignore  # noqa: E501
     layers = LayersList()
     commands = CommandsList()  # type: CommandsList
-    ASN1_default_codec = None  #: Codec used by default for ASN1 objects
-    AS_resolver = None  #: choose the AS resolver class to use
+    #: Codec used by default for ASN1 objects
+    ASN1_default_codec = None  # type: 'scapy.asn1.asn1.ASN1Codec'
+    #: choose the AS resolver class to use
+    AS_resolver = None  # type: scapy.as_resolvers.AS_resolver
     dot15d4_protocol = None  # Used in dot15d4.py
     logLevel = Interceptor("logLevel", log_scapy.level, _loglevel_changer)
     #: if 0, doesn't check that IPID matches between IP sent and
@@ -721,7 +730,7 @@ class Conf(ConfClass):
     promisc = True
     sniff_promisc = 1  #: default mode for sniff()
     raw_layer = None  # type: Type[Packet]
-    raw_summary = False
+    raw_summary = False  # type: Union[bool, Callable[[bytes], Any]]
     padding_layer = None  # type: Type[Packet]
     default_l2 = None  # type: Type[Packet]
     l2types = Num2Layer()
@@ -826,6 +835,7 @@ class Conf(ConfClass):
         'mobileip',
         'netbios',
         'netflow',
+        'ntlm',
         'ntp',
         'ppi',
         'ppp',

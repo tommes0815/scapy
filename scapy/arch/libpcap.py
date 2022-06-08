@@ -13,7 +13,7 @@ import socket
 import struct
 import time
 
-from scapy.automaton import SelectableObject, select_objects
+from scapy.automaton import select_objects
 from scapy.compat import raw, plain_str
 from scapy.config import conf
 from scapy.consts import WINDOWS
@@ -60,9 +60,8 @@ _pcap_if_flags = [
 ]
 
 
-class _L2libpcapSocket(SuperSocket, SelectableObject):
+class _L2libpcapSocket(SuperSocket):
     def __init__(self):
-        SelectableObject.__init__(self)
         self.cls = None
 
     def recv_raw(self, x=MTU):
@@ -294,7 +293,7 @@ if conf.use_pcap:
 
         def setfilter(self, f):
             filter_exp = create_string_buffer(f.encode("utf8"))
-            if pcap_compile(self.pcap, byref(self.bpf_program), filter_exp, 0, -1) == -1:  # noqa: E501
+            if pcap_compile(self.pcap, byref(self.bpf_program), filter_exp, 1, -1) == -1:  # noqa: E501
                 log_runtime.error("Could not compile filter expression %s", f)
                 return False
             else:

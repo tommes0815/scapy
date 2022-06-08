@@ -12,6 +12,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 import os
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 from scapy.compat import lambda_tuple_converter
 from scapy.config import conf
@@ -24,11 +25,8 @@ from scapy.base_classes import (
 )
 from scapy.utils import do_graph, hexdump, make_table, make_lined_table, \
     make_tex_table, issubtype
-from scapy.extlib import plt, Line2D, \
-    MATPLOTLIB_INLINED, MATPLOTLIB_DEFAULT_PLOT_KARGS
 from functools import reduce
-import scapy.modules.six as six
-from scapy.modules.six.moves import range, zip
+import scapy.libs.six as six
 
 # typings
 from scapy.compat import (
@@ -48,6 +46,8 @@ from scapy.compat import (
 )
 from scapy.packet import Packet
 
+if TYPE_CHECKING:
+    from scapy.libs.matplot import Line2D
 
 #############
 #  Results  #
@@ -290,6 +290,13 @@ class _PacketList(Generic[_Inner]):
 
         lfilter: a truth function that decides whether a packet must be plotted
         """
+        # Defer imports of matplotlib until its needed
+        # because it has a heavy dep chain
+        from scapy.libs.matplot import (
+            plt,
+            MATPLOTLIB_INLINED,
+            MATPLOTLIB_DEFAULT_PLOT_KARGS
+        )
 
         # Python 2 backward compatibility
         f = lambda_tuple_converter(f)
@@ -328,6 +335,13 @@ class _PacketList(Generic[_Inner]):
 
         A list of matplotlib.lines.Line2D is returned.
         """
+        # Defer imports of matplotlib until its needed
+        # because it has a heavy dep chain
+        from scapy.libs.matplot import (
+            plt,
+            MATPLOTLIB_INLINED,
+            MATPLOTLIB_DEFAULT_PLOT_KARGS
+        )
 
         # Get the list of packets
         if lfilter is None:
@@ -361,6 +375,13 @@ class _PacketList(Generic[_Inner]):
 
         A list of matplotlib.lines.Line2D is returned.
         """
+        # Defer imports of matplotlib until its needed
+        # because it has a heavy dep chain
+        from scapy.libs.matplot import (
+            plt,
+            MATPLOTLIB_INLINED,
+            MATPLOTLIB_DEFAULT_PLOT_KARGS
+        )
 
         # Python 2 backward compatibility
         f = lambda_tuple_converter(f)
@@ -738,39 +759,6 @@ class _PacketList(Generic[_Inner]):
             pc for pc in (
                 self._elt2pkt(p).getlayer(**getlayer_arg) for p in self.res
             ) if pc is not None],
-            name, stats
-        )
-
-    def convert_to(self,
-                   other_cls,  # type: Type[Packet]
-                   name=None,  # type: Optional[str]
-                   stats=None  # type: Optional[List[Type[Packet]]]
-                   ):
-        # type: (...) -> PacketList
-        """Converts all packets to another type.
-
-        See ``Packet.convert_to`` for more info.
-
-        :param other_cls: reference to a Packet class to convert to
-        :type other_cls: Type[scapy.packet.Packet]
-
-        :param name: optional name for the new PacketList
-        :type name: Optional[str]
-
-        :param stats: optional list of protocols to give stats on;
-                      if not specified, inherits from this PacketList.
-        :type stats: Optional[List[Type[scapy.packet.Packet]]]
-
-        :rtype: scapy.plist.PacketList
-        """
-        if name is None:
-            name = "{} converted to {}".format(
-                self.listname, other_cls.__name__)
-        if stats is None:
-            stats = self.stats
-
-        return PacketList(
-            [self._elt2pkt(p).convert_to(other_cls) for p in self.res],
             name, stats
         )
 

@@ -22,19 +22,22 @@ from scapy.arch.common import get_if, compile_filter, _iff_flags
 from scapy.arch.unix import in6_getifaddr
 from scapy.compat import plain_str
 from scapy.config import conf
+from scapy.consts import LINUX
 from scapy.data import ARPHDR_LOOPBACK, ARPHDR_ETHER
 from scapy.error import Scapy_Exception, warning
 from scapy.interfaces import InterfaceProvider, IFACES, NetworkInterface, \
     network_name
 from scapy.pton_ntop import inet_ntop
-from scapy.modules.six.moves import range
+
+if LINUX:
+    raise OSError("BPF conflicts with Linux")
 
 
 # ctypes definitions
 
 LIBC = cdll.LoadLibrary(find_library("c"))
 
-LIBC.ioctl.argtypes = [c_int, c_ulong, c_char_p]
+LIBC.ioctl.argtypes = [c_int, c_ulong, ]
 LIBC.ioctl.restype = c_int
 
 # The following is implemented as of Python >= 3.3
@@ -122,6 +125,11 @@ def get_if_raw_hwaddr(ifname):
     # Pack and return the MAC address
     mac = addresses[0].split(' ')[1]
     mac = [chr(int(b, 16)) for b in mac.split(':')]
+
+    # Check that the address length is correct
+    if len(mac) != 6:
+        raise Scapy_Exception("No MAC address found on %s !" % ifname)
+
     return (ARPHDR_ETHER, ''.join(mac))
 
 

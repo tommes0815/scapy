@@ -36,6 +36,7 @@ from scapy.arch import get_if_hwaddr
 from scapy.as_resolvers import AS_resolver_riswhois
 from scapy.base_classes import Gen
 from scapy.compat import chb, orb, raw, plain_str, bytes_encode
+from scapy.consts import WINDOWS
 from scapy.config import conf
 from scapy.data import DLT_IPV6, DLT_RAW, DLT_RAW_ALT, ETHER_ANY, ETH_P_IPV6, \
     MTU
@@ -48,7 +49,7 @@ from scapy.fields import BitEnumField, BitField, ByteEnumField, ByteField, \
 from scapy.layers.inet import IP, IPTools, TCP, TCPerror, TracerouteResult, \
     UDP, UDPerror
 from scapy.layers.l2 import CookedLinux, Ether, GRE, Loopback, SNAP
-import scapy.modules.six as six
+import scapy.libs.six as six
 from scapy.packet import bind_layers, Packet, Raw
 from scapy.sendrecv import sendp, sniff, sr, srp1
 from scapy.supersocket import SuperSocket, L3RawSocket
@@ -553,16 +554,15 @@ class PseudoIPv6(Packet):  # IPv6 Pseudo-header for checksum computation
     name = "Pseudo IPv6 Header"
     fields_desc = [IP6Field("src", "::"),
                    IP6Field("dst", "::"),
-                   ShortField("uplen", None),
+                   IntField("uplen", None),
                    BitField("zero", 0, 24),
                    ByteField("nh", 0)]
 
 
-def in6_chksum(nh, u, p):
+def in6_pseudoheader(nh, u, plen):
+    # type: (int, IP, int) -> PseudoIPv6
     """
-    As Specified in RFC 2460 - 8.1 Upper-Layer Checksums
-
-    Performs IPv6 Upper Layer checksum computation.
+    Build an PseudoIPv6 instance as specified in RFC 2460 8.1
 
     This function operates by filling a pseudo header class instance
     (PseudoIPv6) with:
@@ -579,9 +579,8 @@ def in6_chksum(nh, u, p):
     :param u: upper layer instance (TCP, UDP, ICMPv6*, ). Instance must be
         provided with all under layers (IPv6 and all extension headers,
         for example)
-    :param p: the payload of the upper layer provided as a string
+    :param plen: the length of the upper layer and payload
     """
-
     ph6 = PseudoIPv6()
     ph6.nh = nh
     rthdr = 0
@@ -604,7 +603,7 @@ def in6_chksum(nh, u, p):
         u = u.underlayer
     if u is None:
         warning("No IPv6 underlayer to compute checksum. Leaving null.")
-        return 0
+        return None
     if hahdr:
         ph6.src = hahdr
     else:
@@ -613,7 +612,25 @@ def in6_chksum(nh, u, p):
         ph6.dst = rthdr
     else:
         ph6.dst = u.dst
-    ph6.uplen = len(p)
+    ph6.uplen = plen
+    return ph6
+
+
+def in6_chksum(nh, u, p):
+    """
+    As Specified in RFC 2460 - 8.1 Upper-Layer Checksums
+
+    See also `.in6_pseudoheader`
+
+    :param nh: value of upper layer protocol
+    :param u: upper layer instance (TCP, UDP, ICMPv6*, ). Instance must be
+        provided with all under layers (IPv6 and all extension headers,
+        for example)
+    :param p: the payload of the upper layer provided as a string
+    """
+    ph6 = in6_pseudoheader(nh, u, len(p))
+    if ph6 is None:
+        return 0
     ph6s = raw(ph6)
     return checksum(ph6s + p)
 
@@ -3351,7 +3368,7 @@ def traceroute6(target, dport=80, minttl=1, maxttl=30, sport=RandShort(),
     a = TracerouteResult6(a.res)
 
     if verbose:
-        a.display()
+        a.show()
 
     return a, b
 
@@ -3364,10 +3381,10 @@ def traceroute6(target, dport=80, minttl=1, maxttl=30, sport=RandShort(),
 
 class L3RawSocket6(L3RawSocket):
     def __init__(self, type=ETH_P_IPV6, filter=None, iface=None, promisc=None, nofilter=0):  # noqa: E501
-        L3RawSocket.__init__(self, type, filter, iface, promisc)
         # NOTE: if fragmentation is needed, it will be done by the kernel (RFC 2292)  # noqa: E501
         self.outs = socket.socket(socket.AF_INET6, socket.SOCK_RAW, socket.IPPROTO_RAW)  # noqa: E501
         self.ins = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(type))  # noqa: E501
+        self.iface = iface
 
 
 def IPv6inIP(dst='203.178.135.36', src=None):
@@ -4071,7 +4088,12 @@ bind_layers(Ether, IPv6, type=0x86dd)
 bind_layers(CookedLinux, IPv6, proto=0x86dd)
 bind_layers(GRE, IPv6, proto=0x86dd)
 bind_layers(SNAP, IPv6, code=0x86dd)
-bind_layers(Loopback, IPv6, type=socket.AF_INET6)
+# AF_INET6 values are platform-dependent. For a detailed explaination, read
+# https://github.com/the-tcpdump-group/libpcap/blob/f98637ad7f086a34c4027339c9639ae1ef842df3/gencode.c#L3333-L3354  # noqa: E501
+if WINDOWS:
+    bind_layers(Loopback, IPv6, type=0x18)
+else:
+    bind_layers(Loopback, IPv6, type=socket.AF_INET6)
 bind_layers(IPerror6, TCPerror, nh=socket.IPPROTO_TCP)
 bind_layers(IPerror6, UDPerror, nh=socket.IPPROTO_UDP)
 bind_layers(IPv6, TCP, nh=socket.IPPROTO_TCP)

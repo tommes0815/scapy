@@ -40,7 +40,7 @@ install:
   # Install Python modules
   # https://github.com/tox-dev/tox/issues/791
   - "%PYTHON%\\python -m pip install virtualenv --upgrade"
-  - "%PYTHON%\\python -m pip install tox"
+  - "%PYTHON%\\python -m pip install tox coverage"
 
 # Compatibility run with Winpcap
 # XXX Remove me when wireshark stops using it as default
@@ -57,12 +57,13 @@ for:
       - choco install -y wireshark
       # Install Python modules
       - "%PYTHON%\\python -m pip install virtualenv --upgrade"
-      - "%PYTHON%\\python -m pip install tox"
+      - "%PYTHON%\\python -m pip install tox coverage"
 
 test_script:
   # Set environment variables
   - set PYTHONPATH=%APPVEYOR_BUILD_FOLDER%
   - set PATH=%APPVEYOR_BUILD_FOLDER%;C:\Program Files\Wireshark\;C:\Program Files\Windump\;%PATH%
+  - set TOX_PARALLEL_NO_SPINNER=1
   
   # Main unit tests
   - "%PYTHON%\\python -m tox -- %UT_FLAGS%"

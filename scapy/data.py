@@ -17,7 +17,7 @@ from scapy.dadict import DADict, fixname
 from scapy.consts import FREEBSD, NETBSD, OPENBSD, WINDOWS
 from scapy.error import log_loading
 from scapy.compat import plain_str
-import scapy.modules.six as six
+import scapy.libs.six as six
 
 from scapy.compat import (
     Any,
@@ -132,6 +132,7 @@ DLT_BLUETOOTH_LE_LL = 251
 DLT_BLUETOOTH_LE_LL_WITH_PHDR = 256
 DLT_VSOCK = 271
 DLT_ETHERNET_MPACKET = 274
+DLT_LINUX_SLL2 = 276
 
 # From net/ipv6.h on Linux (+ Additions)
 IPV6_ADDR_UNICAST = 0x01

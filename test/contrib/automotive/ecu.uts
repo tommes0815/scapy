@@ -60,7 +60,20 @@ assert 5 == state.ses
 assert "42" == state.myinfo
 assert repr(state) == "myinfo42ses5"
 
+= Delete Attribute Test
 
+state = EcuState(myinfo="42")
+
+state.ses = 5
+assert state.ses == 5
+
+del state.ses
+
+try:
+    x = state.ses
+    assert False
+except (KeyError, AttributeError):
+    assert state.myinfo == "42"
 
 = Copy tests
 
@@ -223,6 +236,8 @@ s2.A = 2
 s2.b = 100
 
 assert s1 > s2
+assert not s1 > s1
+assert not s1 < s1
 
 = less than tests 6
 
@@ -262,6 +277,75 @@ assert s1 != s2
 assert s2 not in s1
 assert s1 not in s2
 
+s1 = EcuState(ses=range(4), security=[None, 5])
+s2 = EcuState(ses=1)
+
+assert s1 != s2
+assert s2 in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, 5])
+s2 = EcuState(ses=range(2))
+
+assert s1 != s2
+assert s2 < s1
+assert s2 in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, 5])
+s2 = EcuState(ses=range(2), security=5)
+
+assert s1 != s2
+assert s2 in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, 5])
+s2 = EcuState(ses=range(5))
+
+assert s1 != s2
+assert s2 not in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, range(5)])
+s2 = EcuState(ses=3)
+
+print(s1._expand())
+print(s2._expand())
+
+assert s1 != s2
+assert s2 in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, range(5), [5, 7, range(4), [range(10), 10]]])
+s2 = EcuState(ses=3, security=10)
+
+print(s1._expand())
+print(s2._expand())
+
+assert s1 != s2
+assert s2 in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, range(5), [5, 7, range(4), [range(10), "B"]]])
+s2 = EcuState(ses=3, security="B")
+
+print(s1._expand())
+print(s2._expand())
+
+assert s1 != s2
+assert s2 in s1
+assert s1 not in s2
+
+s1 = EcuState(ses=range(4), security=[None, range(5), [5, 7, range(4), [range(10), "B"]]])
+s2 = EcuState(ses=3, security="C")
+
+print(s1._expand())
+print(s2._expand())
+
+assert s1 != s2
+assert s2 not in s1
+assert s1 not in s2
+
 s1 = EcuState(ses=range(3), security=5)
 s2 = EcuState(ses=1, security=5)
 
@@ -278,6 +362,13 @@ assert s1 not in s2
 
 s1 = EcuState(ses=[1,2,3])
 s2 = EcuState(ses=[1,2,3])
+
+assert s1 in s2
+assert s2 in s1
+assert s1 == s2
+
+s1 = EcuState(ses=1)
+s2 = EcuState(ses=1)
 
 assert s1 in s2
 assert s2 in s1
@@ -483,8 +574,8 @@ assert unanswered_packets[0].diagnosticSessionType == 4
 
 = Analyze multiple UDS messages
 
-with PcapReader("test/contrib/automotive/ecu_trace.pcap.gz") as sock:
-     udsmsgs = sniff(session=ISOTPSession, session_kwargs={"use_ext_addr":False, "basecls":UDS}, count=50, opened_socket=sock, timeout=3)
+with PcapReader(scapy_path("test/pcaps/ecu_trace.pcap.gz")) as sock:
+     udsmsgs = sniff(session=ISOTPSession, session_kwargs={"use_ext_address":False, "basecls":UDS}, count=50, opened_socket=sock, timeout=3)
 
 assert len(udsmsgs) == 50
 
@@ -513,8 +604,8 @@ assert len(ecu.log["TransferData"]) == 2
 
 session = EcuSession()
 
-with PcapReader("test/contrib/automotive/ecu_trace.pcap.gz") as sock:
-     udsmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "use_ext_addr":False, "basecls":UDS}, count=50, opened_socket=sock, timeout=3)
+with PcapReader(scapy_path("test/pcaps/ecu_trace.pcap.gz")) as sock:
+     udsmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "use_ext_address":False, "basecls":UDS}, count=50, opened_socket=sock, timeout=3)
 
 assert len(udsmsgs) == 50
 
@@ -541,13 +632,15 @@ assert len(ecu.log["TransferData"]) == 2
 
 session = EcuSession()
 
-with CandumpReader("test/contrib/automotive/gmlan_trace.candump") as sock:
-    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "did":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=2, opened_socket=sock, timeout=3)
+conf.contribs['CAN']['swap-bytes'] = True
+
+with PcapReader(scapy_path("test/pcaps/gmlan_trace.pcap.gz")) as sock:
+    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "rx_id":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=2, opened_socket=sock, timeout=3)
     ecu = session.ecu
     print("Check 1 after change to diagnostic mode")
     assert len(ecu.supported_responses) == 1
     assert ecu.state == EcuState(session=3)
-    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "did":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=8, opened_socket=sock)
+    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "rx_id":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=8, opened_socket=sock)
     ecu = session.ecu
     print("Check 2 after some more messages were read1")
     assert len(ecu.supported_responses) == 3
@@ -555,13 +648,13 @@ with CandumpReader("test/contrib/automotive/gmlan_trace.candump") as sock:
     assert ecu.state.session == 3
     print("assert 1")
     assert ecu.state.communication_control == 1
-    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "did":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=10, opened_socket=sock)
+    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "rx_id":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=10, opened_socket=sock)
     ecu = session.ecu
     print("Check 3 after change to programming mode (bootloader)")
     assert len(ecu.supported_responses) == 4
     assert ecu.state.session == 2
     assert ecu.state.communication_control == 1
-    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "did":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=16, opened_socket=sock)
+    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "rx_id":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=16, opened_socket=sock)
     ecu = session.ecu
     print("Check 4 after gaining security access")
     assert len(ecu.supported_responses) == 6
@@ -574,9 +667,10 @@ with CandumpReader("test/contrib/automotive/gmlan_trace.candump") as sock:
 session = EcuSession(verbose=False, store_supported_responses=False)
 
 conf.contribs['GMLAN']['GMLAN_ECU_AddressingScheme'] = 4
+conf.contribs['CAN']['swap-bytes'] = True
 
-with CandumpReader("test/contrib/automotive/gmlan_trace.candump") as sock:
-     gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "did":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=200, opened_socket=sock, timeout=6)
+with PcapReader(scapy_path("test/pcaps/gmlan_trace.pcap.gz")) as sock:
+    gmlanmsgs = sniff(session=ISOTPSession, session_kwargs={"supersession": session, "rx_id":[0x241, 0x641, 0x101], "basecls":GMLAN}, count=200, opened_socket=sock, timeout=6)
 
 ecu = session.ecu
 assert len(ecu.supported_responses) == 0

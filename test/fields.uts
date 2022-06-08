@@ -101,7 +101,7 @@ p = Ether() / ARP(pdst="1.2.3.4")
 assert p.src == p.hwsrc == p[ARP].hwsrc == get_if_hwaddr(conf.iface)
 p = Dot3() / LLC() / SNAP() / ARP(pdst="1.2.3.4")
 assert p.src == p.hwsrc == p[ARP].hwsrc == get_if_hwaddr(conf.iface)
-conf.route.delt(net="1.2.3.4/32")
+conf.route.delt(net="1.2.3.4/32", dev=conf.iface)
 
 = IPField class
 ~ core field
@@ -460,6 +460,35 @@ p = TestPLF(raw(x))
 p
 p.show()
 IP in p and TCP in p and UDP in p and p[TCP].seq == 1234567
+
+= Test parent reference
+~ field lengthfield
+x=TestPLF(plist=[IP()/TCP(), IP()/UDP()])
+assert p.getlayer(IP, 1).parent == p and p.getlayer(IP, 2).parent == p
+p = TestPLF(raw(x))
+assert p.getlayer(IP, 1).parent == p and p.getlayer(IP, 2).parent == p
+
+= Test parent reference in guess_payload_class
+
+class TestGuessPLFInner(Packet):
+    name="test guess inner"
+    fields_desc=[ LenField("foo", None) ]
+    def guess_payload_class(self, payload):
+        self.parentflag = True
+        if self.parent is None:
+            # all exceptions are caught, so have to use flag
+            self.parentflag = False
+        return super(TestGuessPLFInner, self).guess_payload_class(payload)
+
+class TestGuessPLF(Packet):
+    name="test guess"
+    fields_desc=[PacketListField("plist", None, TestGuessPLFInner,
+                                 next_cls_cb=lambda p,l,c,r: TestGuessPLFInner if len(l) == 0 else None)]
+
+x=TestGuessPLF(plist=TestGuessPLFInner()/Raw(b'123'))
+p=TestGuessPLF(raw(x))
+assert p[TestGuessPLFInner].parentflag
+assert p[TestGuessPLFInner].parent == p
 
 = Nested PacketListField
 ~ field lengthfield
@@ -932,9 +961,9 @@ fcb = EnumField('test', 0, (
 def expect_exception(e, c):
     try:
         eval(c)
-        return False
+        assert False
     except e:
-        return True
+        assert True
 
 
 = EnumField.any2i_one
@@ -959,8 +988,6 @@ assert(fcb.any2i_one(None, 'Foo') == 0)
 assert(fcb.any2i_one(None, 'Bar') == 1)
 assert(fcb.any2i_one(None, 5) == 5)
 expect_exception(ValueError, 'fcb.any2i_one(None, "Baz")')
-
-True
 
 = EnumField.any2i
 ~ field enumfield
@@ -996,15 +1023,15 @@ True
 
 assert(f.i2repr_one(None, 0) == 'Foo')
 assert(f.i2repr_one(None, 1) == 'Bar')
-expect_exception(KeyError, 'f.i2repr_one(None, 2)')
+assert(f.i2repr_one(None, 2) == '2')
 
 assert(rf.i2repr_one(None, 0) == 'Foo')
 assert(rf.i2repr_one(None, 1) == 'Bar')
-expect_exception(KeyError, 'rf.i2repr_one(None, 2)')
+assert(rf.i2repr_one(None, 2) == '2')
 
 assert(lf.i2repr_one(None, 0) == 'Foo')
 assert(lf.i2repr_one(None, 1) == 'Bar')
-expect_exception(KeyError, 'lf.i2repr_one(None, 2)')
+assert(lf.i2repr_one(None, 2) == '2')
 
 assert(fcb.i2repr_one(None, 0) == 'Foo')
 assert(fcb.i2repr_one(None, 1) == 'Bar')
@@ -1044,17 +1071,17 @@ True
 
 assert(f.i2repr(None, 0) == 'Foo')
 assert(f.i2repr(None, 1) == 'Bar')
-expect_exception(KeyError, 'f.i2repr(None, 2)')
+assert(f.i2repr(None, 2) == '2')
 assert(f.i2repr(None, [0, 1]) == ['Foo', 'Bar'])
 
 assert(rf.i2repr(None, 0) == 'Foo')
 assert(rf.i2repr(None, 1) == 'Bar')
-expect_exception(KeyError, 'rf.i2repr(None, 2)')
+assert(rf.i2repr(None, 2) == '2')
 assert(rf.i2repr(None, [0, 1]) == ['Foo', 'Bar'])
 
 assert(lf.i2repr(None, 0) == 'Foo')
 assert(lf.i2repr(None, 1) == 'Bar')
-expect_exception(KeyError, 'lf.i2repr(None, 2)')
+assert(lf.i2repr(None, 2) == '2')
 assert(lf.i2repr(None, [0, 1]) == ['Foo', 'Bar'])
 
 assert(fcb.i2repr(None, 0) == 'Foo')
@@ -1105,9 +1132,9 @@ True
 def expect_exception(e, c):
     try:
         eval(c)
-        return False
+        assert False
     except e:
-        return True
+        assert True
 
 
 = CharEnumField tests initialization
@@ -1144,9 +1171,9 @@ True
 def expect_exception(e, c):
     try:
         eval(c)
-        return False
+        assert False
     except e:
-        return True
+        assert True
 
 
 = XByteEnumField tests initialization
@@ -1222,9 +1249,9 @@ True
 def expect_exception(e, c):
     try:
         eval(c)
-        return False
+        assert False
     except e:
-        return True
+        assert True
 
 
 = XShortEnumField tests initialization
@@ -1589,17 +1616,20 @@ assert a.sprintf("%flags%") == "FS"
 class FlagsTest2(Packet):
     fields_desc = [
         FlagsField("flags", 0x2, 16, {
-            0: "A",  # 0 bit
-            7: "B"   # 7 bit
+            0x0001: "A", 
+            0x0008: "B",
+            0x1000: "C",
         })
     ]
 
-a = FlagsTest2(flags=255)
+a = FlagsTest2(flags=9)
 a.sprintf("%flags%")
 assert a.flags.A
 assert a.flags.B
-assert a.sprintf("%flags%") == "A+bit_1+bit_2+bit_3+bit_4+bit_5+bit_6+B"
+assert a.sprintf("%flags%") == "A+B"
 
+b = FlagsTest2(flags="B+C")
+assert b.flags == 0x1000 | 0x0008
 
 ########
 ########
@@ -2101,3 +2131,39 @@ assert isinstance(p.packet.short1, RandShort)
 assert isinstance(p.packet.byte, RandByte)
 assert isinstance(p.packet.long, RandLong)
 assert isinstance(p.short2, RandShort)
+
+= Test parent reference in guess_payload_class
+
+class TestGuessInner(Packet):
+    name="test guess inner"
+    fields_desc=[ ByteField("foo", 0) ]
+    def guess_payload_class(self, payload):
+        self.parentflag = True
+        if self.parent is None:
+            # all exceptions are caught, so have to use flag
+            self.parentflag = False
+        return super(TestGuessInner, self).guess_payload_class(payload)
+
+class TestGuess(Packet):
+    name="test guess"
+    fields_desc=[ PacketField("pf", None, TestGuessInner) ]
+
+x=TestGuess(pf=TestGuessInner()/Raw(b'123'))
+p=TestGuess(raw(x))
+assert p[TestGuessInner].parentflag
+assert p[TestGuessInner].parent == p
+
+############
+############
++ XStr(*)Field tests
+
+= i2repr
+~ field xstrfield
+
+from collections import namedtuple
+MockPacket = namedtuple('MockPacket', ['type'])
+
+mp = MockPacket(0)
+f = XStrField('test', None)
+x = f.i2repr(mp, RandBin())
+assert x == '<RandBin>'

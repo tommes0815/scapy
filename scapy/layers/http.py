@@ -61,7 +61,7 @@ from scapy.utils import get_temp_file, ContextManagerSubprocess
 
 from scapy.layers.inet import TCP, TCP_client
 
-from scapy.modules import six
+from scapy.libs import six
 
 try:
     import brotli
@@ -673,7 +673,7 @@ def http_request(host, path="/", port=80, timeout=3,
     :param path: the path of the request (default /)
     :param port: the port (default 80)
     :param timeout: timeout before None is returned
-    :param display: display the resullt in the default browser (default False)
+    :param display: display the result in the default browser (default False)
     :param raw: opens a raw socket instead of going through the OS's TCP
                 socket. Scapy will then use its own TCP client.
                 Careful, the OS might cancel the TCP connection with RST.

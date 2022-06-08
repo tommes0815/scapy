@@ -24,6 +24,7 @@ from scapy.fields import (
     FieldLenField,
     IntField,
     PacketField,
+    PacketLenField,
     PacketListField,
     ShortEnumField,
     ShortField,
@@ -35,7 +36,7 @@ from scapy.fields import (
 
 from scapy.compat import hex_bytes, orb, raw
 from scapy.config import conf
-from scapy.modules import six
+from scapy.libs import six
 from scapy.packet import Packet, Raw, Padding
 from scapy.utils import randstring, repr_hex
 from scapy.layers.x509 import OCSP_Response
@@ -149,6 +150,9 @@ class _GMTUnixTimeField(UTCTimeField):
         if x is not None:
             return x
         return 0
+
+    def i2m(self, pkt, x):
+        return int(x) if x is not None else 0
 
 
 class _TLSRandomBytesField(StrFixedLenField):
@@ -451,7 +455,7 @@ class TLS13ClientHello(_TLSHandshake):
             s.sid = self.sid
             s.middlebox_compatibility = True
 
-        self.random_bytes = msg_str[10:38]
+        self.random_bytes = msg_str[6:38]
         s.client_random = self.random_bytes
         if self.ext:
             for e in self.ext:
@@ -1503,7 +1507,7 @@ class ThreeBytesLenField(FieldLenField):
 _cert_status_cls = {1: OCSP_Response}
 
 
-class _StatusField(PacketField):
+class _StatusField(PacketLenField):
     def m2i(self, pkt, m):
         idtype = pkt.status_type
         cls = self.cls
@@ -1519,7 +1523,8 @@ class TLSCertificateStatus(_TLSHandshake):
                    ByteEnumField("status_type", 1, _cert_status_type),
                    ThreeBytesLenField("responselen", None,
                                       length_of="response"),
-                   _StatusField("response", None, Raw)]
+                   _StatusField("response", None, Raw,
+                                length_from=lambda pkt: pkt.responselen)]
 
 
 ###############################################################################

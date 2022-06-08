@@ -13,7 +13,7 @@ import re
 
 from ast import literal_eval
 
-import scapy.modules.six as six
+import scapy.libs.six as six
 from scapy.config import conf
 from scapy.consts import LINUX
 
@@ -21,7 +21,7 @@ if six.PY2 or not LINUX or conf.use_pypy:
     conf.contribs['CANSocket'] = {'use-python-can': True}
 
 from scapy.contrib.cansocket import CANSocket, PYTHON_CAN   # noqa: E402
-from scapy.contrib.isotp import ISOTPScan                   # noqa: E402
+from scapy.contrib.isotp import isotp_scan                   # noqa: E402
 
 
 def signal_handler(sig, frame):
@@ -69,6 +69,30 @@ def usage(is_error):
     Python3 on Linux:
     python3 -m scapy.tools.automotive.isotpscanner --channel can0 --start 0 --end 100 \n''',  # noqa: E501
           file=sys.stderr if is_error else sys.stdout)
+
+
+def create_socket(python_can_args, interface, channel):
+
+    if PYTHON_CAN:
+        if python_can_args:
+            interface_string = "CANSocket(bustype=" \
+                               "'%s', channel='%s', %s)" % \
+                               (interface, channel, python_can_args)
+            arg_dict = dict((k, literal_eval(v)) for k, v in
+                            (pair.split('=') for pair in
+                             re.split(', | |,', python_can_args)))
+            sock = CANSocket(bustype=interface, channel=channel,
+                             **arg_dict)
+        else:
+            interface_string = "CANSocket(bustype=" \
+                               "'%s', channel='%s')" % \
+                               (interface, channel)
+            sock = CANSocket(bustype=interface, channel=channel)
+    else:
+        sock = CANSocket(channel=channel)
+        interface_string = "\"%s\"" % channel
+
+    return sock, interface_string
 
 
 def main():
@@ -148,42 +172,24 @@ def main():
         print("start must be equal or smaller than end.", file=sys.stderr)
         sys.exit(1)
 
-    sock = None
-
     try:
-        if PYTHON_CAN:
-            if python_can_args:
-                interface_string = "CANSocket(bustype=" \
-                                   "'%s', channel='%s', %s)" % \
-                                   (interface, channel, python_can_args)
-                arg_dict = dict((k, literal_eval(v)) for k, v in
-                                (pair.split('=') for pair in
-                                 re.split(', | |,', python_can_args)))
-                sock = CANSocket(bustype=interface, channel=channel,
-                                 **arg_dict)
-            else:
-                interface_string = "CANSocket(bustype=" \
-                                   "'%s', channel='%s')" % \
-                                   (interface, channel)
-                sock = CANSocket(bustype=interface, channel=channel)
-        else:
-            sock = CANSocket(channel=channel)
-            interface_string = "\"%s\"" % channel
+        sock, interface_string = \
+            create_socket(python_can_args, interface, channel)
 
         if verbose:
             print("Start scan (%s - %s)" % (hex(start), hex(end)))
 
         signal.signal(signal.SIGINT, signal_handler)
 
-        result = ISOTPScan(sock,
-                           range(start, end + 1),
-                           extended_addressing=extended,
-                           noise_listen_time=noise_listen_time,
-                           sniff_time=float(sniff_time) / 1000,
-                           output_format="code" if piso else "text",
-                           can_interface=interface_string,
-                           extended_can_id=extended_can_id,
-                           verbose=verbose)
+        result = isotp_scan(sock,
+                            range(start, end + 1),
+                            extended_addressing=extended,
+                            noise_listen_time=noise_listen_time,
+                            sniff_time=float(sniff_time) / 1000,
+                            output_format="code" if piso else "text",
+                            can_interface=interface_string,
+                            extended_can_id=extended_can_id,
+                            verbose=verbose)
 
         print("Scan: \n%s" % result)
 
@@ -195,7 +201,7 @@ def main():
         sys.exit(1)
 
     finally:
-        if sock is not None:
+        if sock is not None and not sock.closed:
             sock.close()
 
 

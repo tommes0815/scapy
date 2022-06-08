@@ -44,6 +44,16 @@ assert not _version_checker(FakeModule2, (5, 143, 4))
 
 assert _version_checker(FakeModule3, (2, 4, 2))
 
+= Check Scapy version
+
+import scapy
+from scapy import _parse_tag, _version_from_git_describe
+
+class GitModuleScapy(object):
+    __version__ = _version_from_git_describe()
+
+assert _parse_tag("v2.3.2-346-g164a52c075c8") == '2.3.2.dev346'
+
 = List layers
 ~ conf command
 ls()
@@ -188,6 +198,8 @@ assert p == "127.0.0.1"
 
 = Interface related functions
 
+import mock
+
 conf.iface
 
 get_if_raw_hwaddr(conf.iface)
@@ -206,6 +218,16 @@ get_if_list()
 get_working_if()
 
 get_if_raw_addr6(conf.iface)
+
+if conf.use_bpf:
+    addr = u"lladdr 29:0b:c2:ff:fe:53:21:e9\n"
+    b = Bunch(returncode=0, communicate=lambda *args, **kargs: (addr, None))
+    with mock.patch('scapy.arch.bpf.core.subprocess.Popen', return_value=b) as popen:
+        try:
+            scapy.arch.bpf.core.get_if_raw_hwaddr("fw0")
+            assert False
+        except Scapy_Exception:
+            assert True
 
 = More Interfaces related functions
 
@@ -298,11 +320,13 @@ conf.route6
 
 # Doesn't pass on Travis Bionic XXX
 if len(routes6) > 2 and not WINDOWS:
+    # Identify routes to fe80::/64
     assert(sum(1 for r in routes6 if r[0] == "::1" and r[4] == ["::1"]) >= 1)
     if not OPENBSD and len(iflist) >= 2:
         assert sum(1 for r in routes6 if r[0] == "fe80::" and r[1] == 64) >= 1
         try:
-            assert sum(1 for r in routes6 if in6_islladdr(r[0]) and r[1] == 128 and r[4] == ["::1"]) >= 1
+            # Identify a route to a node IPv6 link-local address
+            assert sum(1 for r in routes6 if in6_islladdr(r[0]) and r[1] == 128) >= 1
         except:
             # IPv6 is not available, but we still check the loopback
             assert conf.route6.route("::/0") == (conf.loopback_name, "::", "::")
@@ -370,7 +394,7 @@ assert chb(1) == b"\x01"
 
 = Pickle and unpickle a packet
 
-import scapy.modules.six as six
+import scapy.libs.six as six
 
 a = IP(dst="192.168.0.1")/UDP()
 
@@ -817,14 +841,18 @@ scapy_delete_temp_files()
 atol("www.secdev.org") == 3642339845
 
 = Test autorun functions
+~ autorun
 
 ret = autorun_get_text_interactive_session("IP().src")
+ret
 assert(ret == (">>> IP().src\n'127.0.0.1'\n", '127.0.0.1'))
 
 ret = autorun_get_html_interactive_session("IP().src")
+ret
 assert(ret == ("<span class=prompt>&gt;&gt;&gt; </span>IP().src\n'127.0.0.1'\n", '127.0.0.1'))
 
 ret = autorun_get_latex_interactive_session("IP().src")
+ret
 assert(ret == ("\\textcolor{blue}{{\\tt\\char62}{\\tt\\char62}{\\tt\\char62} }IP().src\n'127.0.0.1'\n", '127.0.0.1'))
 
 ret = autorun_get_text_interactive_session("scapy_undefined")
@@ -872,35 +900,42 @@ conf.netcache
 
 = Test pyx detection functions
 
-from scapy.extlib import _test_pyx
-assert _test_pyx() == False
+from mock import patch
+
+def _r(*args, **kwargs):
+    raise OSError
+
+with patch("scapy.libs.test_pyx.subprocess.check_call", _r):
+    from scapy.libs.test_pyx import _test_pyx
+    assert _test_pyx() == False
 
 = Test matplotlib detection functions
 
 from mock import MagicMock, patch
 
-bck_scapy_ext_lib = sys.modules.get("scapy.extlib", None)
-del(sys.modules["scapy.extlib"])
+bck_scapy_libs_matplot = sys.modules.get("scapy.libs.matplot", None)
+if bck_scapy_libs_matplot:
+    del(sys.modules["scapy.libs.matplot"])
 
 mock_matplotlib = MagicMock()
 mock_matplotlib.get_backend.return_value = "inline"
 mock_matplotlib.pyplot = MagicMock()
 mock_matplotlib.pyplot.plt = None
 with patch.dict("sys.modules", **{ "matplotlib": mock_matplotlib, "matplotlib.lines": mock_matplotlib}):
-    from scapy.extlib import MATPLOTLIB, MATPLOTLIB_INLINED, MATPLOTLIB_DEFAULT_PLOT_KARGS, Line2D
+    from scapy.libs.matplot import MATPLOTLIB, MATPLOTLIB_INLINED, MATPLOTLIB_DEFAULT_PLOT_KARGS, Line2D
     assert MATPLOTLIB == 1
     assert MATPLOTLIB_INLINED == 1
     assert "marker" in MATPLOTLIB_DEFAULT_PLOT_KARGS
 
 mock_matplotlib.get_backend.return_value = "ko"
 with patch.dict("sys.modules", **{ "matplotlib": mock_matplotlib, "matplotlib.lines": mock_matplotlib}):
-    from scapy.extlib import MATPLOTLIB, MATPLOTLIB_INLINED, MATPLOTLIB_DEFAULT_PLOT_KARGS
+    from scapy.libs.matplot import MATPLOTLIB, MATPLOTLIB_INLINED, MATPLOTLIB_DEFAULT_PLOT_KARGS
     assert MATPLOTLIB == 1
     assert MATPLOTLIB_INLINED == 0
     assert "marker" in MATPLOTLIB_DEFAULT_PLOT_KARGS
 
-if bck_scapy_ext_lib:
-    sys.modules["scapy.extlib"] = bck_scapy_ext_lib
+if bck_scapy_libs_matplot:
+    sys.modules["scapy.libs.matplot"] = bck_scapy_libs_matplot
 
 
 ############
@@ -1282,7 +1317,7 @@ a = ASN1_DECODING_ERROR("error", exc=OSError(1))
 assert repr(a) == "<ASN1_DECODING_ERROR['error']{{1}}>"
 b = ASN1_DECODING_ERROR("error", exc=OSError(ASN1_BIT_STRING("0")))
 assert repr(b) in ["<ASN1_DECODING_ERROR['error']{{<ASN1_BIT_STRING[0]=b'\\x00' (7 unused bits)>}}>",
-                   "<ASN1_DECODING_ERROR['error']{{<ASN1_BIT_STRING[0]=\x00 (7 unused bits)>}}>"]
+                   "<ASN1_DECODING_ERROR['error']{{<ASN1_BIT_STRING[0]='\\x00' (7 unused bits)>}}>"]
 
 = ASN1 - ASN1_INTEGER
 a = ASN1_INTEGER(int("1"*23))
@@ -1315,15 +1350,7 @@ raw(RandASN1Object())
 # RSN Information that isn't parsed properly,
 # causing the SSID to be overridden.
 # This test checks the SSID is parsed properly.
-print(os.path.dirname(__file__))
-filename = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-        "test",
-        "pcaps",
-        "bad_rsn_parsing_overrides_ssid.pcap"
-    ))
+filename = scapy_path("/test/pcaps/bad_rsn_parsing_overrides_ssid.pcap")
 frame = rdpcap(filename)[0]
 beacon = frame.getlayer(5)
 ssid = beacon.network_stats()['ssid']
@@ -1337,12 +1364,10 @@ assert ssid == "ROUTE-821E295"
 * Those tests need network access
 
 = Sending and receiving an ICMP
-~ netaccess IP ICMP icmp_firewall
+~ netaccess needs_root IP ICMP icmp_firewall
 def _test():
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    x = sr1(IP(dst="www.google.com")/ICMP(),timeout=3)
-    conf.debug_dissector = old_debug_dissector
+    with no_debug_dissector():
+    	x = sr1(IP(dst="www.google.com")/ICMP(),timeout=3)
     x
     assert x[IP].ottl() in [32, 64, 128, 255]
     assert 0 <= x[IP].hops() <= 126
@@ -1351,7 +1376,7 @@ def _test():
 retry_test(_test)
 
 = Sending a TCP syn message at layer 2 and layer 3
-~ netaccess IP
+~ netaccess needs_root IP
 def _test():
     tmp = send(IP(dst="8.8.8.8")/TCP(sport=RandShort(), dport=53, flags="S"), return_packets=True, realtime=True)
     assert(len(tmp) == 1)
@@ -1368,7 +1393,7 @@ def _test():
 retry_test(_test)
 
 = Latency check: localhost ICMP
-~ netaccess linux latency
+~ netaccess needs_root linux latency
 
 sock = conf.L3socket
 conf.L3socket = L3RawSocket
@@ -1379,12 +1404,38 @@ def _test():
     assert (ans.time - req.sent_time) >= 0
     assert (ans.time - req.sent_time) <= 1e-3
 
+try:
+    retry_test(_test)
+finally:
+    conf.L3socket = sock
+
+= Test sniffing on multiple sockets
+~ netaccess needs_root sniff
+
+# This test sniffs on the same interface twice at the same time, to
+# simulate sniffing on multiple interfaces.
+
+def _test():
+	iface = conf.route.route("www.google.com")[0]
+	port = int(RandShort())
+	pkt = IP(dst="www.google.com")/TCP(sport=port, dport=80, flags="S")
+	def cb():
+	    sr1(pkt, timeout=3)
+	sniffer = AsyncSniffer(started_callback=cb,
+			       iface=[iface, iface],
+			       lfilter=lambda x: TCP in x and x[TCP].dport == port,
+			       prn=lambda x: x.summary(),
+			       count=2)
+	sniffer.start()
+	sniffer.join(timeout=3)
+	assert len(sniffer.results) == 2
+	for pkt in sniffer.results:
+	    assert pkt.sniffed_on == iface
+
 retry_test(_test)
 
-conf.L3socket = sock
-
 = Sending a TCP syn 'forever' at layer 2 and layer 3
-~ netaccess IP
+~ netaccess needs_root IP
 def _test():
     tmp = srloop(IP(dst="8.8.8.8")/TCP(sport=RandShort(), dport=53, flags="S"), count=1, timeout=3)
     assert(type(tmp) == tuple and len(tmp[0]) == 1)
@@ -1395,42 +1446,54 @@ def _test():
 retry_test(_test)
 
 = Sending and receiving an TCP syn with flooding methods
-~ netaccess IP
+~ netaccess needs_root IP flood
 from functools import partial
 # flooding methods do not support timeout. Packing the test for security
-def _test_flood(flood_function, add_ether=False):
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    p = IP(dst="www.google.com")/TCP(sport=RandShort(), dport=80, flags="S")
-    if add_ether:
-        p = Ether()/p
-    x = flood_function(p, timeout=2)
-    conf.debug_dissector = old_debug_dissector
+def _test_flood(ip, flood_function, add_ether=False):
+    with no_debug_dissector():
+        p = IP(dst=ip)/TCP(sport=RandShort(), dport=80, flags="S")
+        if add_ether:
+            p = Ether()/p
+        p.show2()
+        x = flood_function(p, timeout=0.5, maxretries=10)
     if type(x) == tuple:
         x = x[0][0][1]
     x
     assert x[IP].ottl() in [32, 64, 128, 255]
     assert 0 <= x[IP].hops() <= 126
 
-_test_srflood = partial(_test_flood, srflood)
+_test_srflood = partial(_test_flood, "www.google.com", srflood)
 retry_test(_test_srflood)
 
-_test_sr1flood = partial(_test_flood, sr1flood)
+_test_sr1flood = partial(_test_flood, "www.google.fr", sr1flood)
 retry_test(_test_sr1flood)
 
-_test_srpflood = partial(_test_flood, srpflood, True)
+_test_srpflood = partial(_test_flood, "www.google.net", srpflood, True)
 retry_test(_test_srpflood)
 
-_test_srp1flood = partial(_test_flood, srp1flood, True)
+_test_srp1flood = partial(_test_flood, "www.google.co.uk", srp1flood, True)
 retry_test(_test_srp1flood)
+
+= test chainEX
+~ netaccess
+
+import socket
+sck = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ssck = StreamSocket(sck)
+
+try:
+    r = ssck.sr1(ICMP(type='echo-request'), timeout=0.1, chainEX=True)
+    assert False
+except Exception:
+    assert True
+finally:
+    sck.close()
 
 = Sending and receiving an ICMPv6EchoRequest
 ~ netaccess ipv6
 def _test():
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    x = sr1(IPv6(dst="www.google.com")/ICMPv6EchoRequest(),timeout=3)
-    conf.debug_dissector = old_debug_dissector
+    with no_debug_dissector():
+        x = sr1(IPv6(dst="www.google.com")/ICMPv6EchoRequest(),timeout=3)
     x
     assert x[IPv6].ottl() in [32, 64, 128, 255]
     assert 0 <= x[IPv6].hops() <= 126
@@ -1540,13 +1603,12 @@ l = [p for p in a]
 len(l) == 7
 
 = Implicit logic 3
-
-# In case there's a single option: __iter__ should return self
+# In case there's a single option: __iter__ should not return self
 a = Ether()/IP(src="127.0.0.1", dst="127.0.0.1")/ICMP()
 for i in a:
     i.sent_time = 1
 
-assert a.sent_time == 1
+assert a.sent_time is None
 
 # In case they are several, self should never be returned
 a = Ether()/IP(src="127.0.0.1", dst="127.0.0.1")/ICMP(seq=(0, 5))
@@ -1561,12 +1623,10 @@ assert a.sent_time is None
 + Real usages
 
 = Port scan
-~ netaccess IP TCP
+~ netaccess needs_root IP TCP
 def _test():
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    ans,unans=sr(IP(dst="www.google.com/30")/TCP(dport=[80,443]), timeout=2)
-    conf.debug_dissector = old_debug_dissector
+    with no_debug_dissector():
+        ans,unans=sr(IP(dst="www.google.com/30")/TCP(dport=[80,443]), timeout=2)
     
     # Backward compatibility: Python 2 only
     if six.PY2:
@@ -1578,107 +1638,66 @@ def _test():
 retry_test(_test)
 
 = Send & receive with debug_match
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
     old_debug_match = conf.debug_match
     conf.debug_match = True
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    ans, unans = sr(IP(dst="www.google.fr") / TCP(sport=RandShort(), dport=80, flags="S"), timeout=2)
-    assert ans[0].query == ans[0][0]
-    assert ans[0].answer == ans[0][1]
+    with no_debug_dissector():
+        ans, unans = sr(IP(dst="www.google.fr") / TCP(sport=RandShort(), dport=80, flags="S"), timeout=2)
+        assert ans[0].query == ans[0][0]
+        assert ans[0].answer == ans[0][1]
     conf.debug_match = old_debug_match
-    conf.debug_dissector = old_debug_dissector
     assert ans and not unans
 
 retry_test(_test)
 
 = Send & receive with retry
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    ans, unans = sr(IP(dst=["8.8.8.8", "1.2.3.4"]) / TCP(sport=RandShort(), dport=53, flags="S"), timeout=2, retry=1)
-    conf.debug_dissector = old_debug_dissector
+    with no_debug_dissector():
+        ans, unans = sr(IP(dst=["8.8.8.8", "1.2.3.4"]) / TCP(sport=RandShort(), dport=53, flags="S"), timeout=2, retry=1)
     assert len(ans) == 1 and len(unans) == 1
 
 retry_test(_test)
 
 = Send & receive with multi
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
-    old_debug_dissector = conf.debug_dissector
-    conf.debug_dissector = False
-    ans, unans = sr(IP(dst=["8.8.8.8", "1.2.3.4"]) / TCP(sport=RandShort(), dport=53, flags="S"), timeout=2, multi=1)
-    conf.debug_dissector = old_debug_dissector
+    with no_debug_dissector():
+        ans, unans = sr(IP(dst=["8.8.8.8", "1.2.3.4"]) / TCP(sport=RandShort(), dport=53, flags="S"), timeout=2, multi=1)
     assert len(ans) >= 1 and len(unans) == 1
 
 retry_test(_test)
 
 = Traceroute function
-~ netaccess tcpdump
+~ netaccess needs_root tcpdump
 * Let's test traceroute
-ans, unans = traceroute("www.slashdot.org")
-ans.nsummary()
-s,r=ans[0]
-s.show()
-s.show(2)
+def _test():
+    ans, unans = traceroute("www.slashdot.org")
+    ans.nsummary()
+    s,r=ans[0]
+    s.show()
+    s.show(2)
+
+retry_test(_test)
 
 = send() and sniff()
-~ netaccess tcpdump
-import time
-import os
+~ netaccess needs_root
 
-from scapy.modules.six.moves.queue import Queue
+def _test():
+    sendp(Ether()/IP(src="9.0.0.0")/UDP(), count=3, iface=conf.iface)
 
-def _send_or_sniff(pkt, timeout, flt, pid, fork, t_other=None, opened_socket=None):
-    assert pid != -1
-    if pid == 0:
-        time.sleep(1)
-        (sendp if isinstance(pkt, (Ether, Dot3)) else send)(pkt)
-        if fork:
-            os._exit(0)
-        else:
-            return
-    else:
-        spkt = raw(pkt)
-        # We do not want to crash when a packet cannot be parsed
-        old_debug_dissector = conf.debug_dissector
-        conf.debug_dissector = False
-        pkts = sniff(
-            timeout=timeout, filter=flt, opened_socket=opened_socket,
-            stop_filter=lambda p: pkt.__class__ in p and raw(p[pkt.__class__]) == spkt
-        )
-        conf.debug_dissector = old_debug_dissector
-        if fork:
-            os.waitpid(pid, 0)
-        else:
-            t_other.join(timeout=3)
-    assert raw(pkt) in (raw(p[pkt.__class__]) for p in pkts if pkt.__class__ in p)
+r = sniff(timeout=3, count=1,
+          lfilter=lambda x: IP in x and x[IP].src == "9.0.0.0",
+          iface=conf.iface,
+          started_callback=_test)
 
-def send_and_sniff(pkt, timeout=2, flt=None, opened_socket=None):
-    """Send a packet, sniff, and check the packet has been seen"""
-    if hasattr(os, "fork"):
-        _send_or_sniff(pkt, timeout, flt, os.fork(), True)
-    else:
-        from threading import Thread
-        def run_function(pkt, timeout, flt, pid, thread, results, opened_socket):
-            _send_or_sniff(pkt, timeout, flt, pid, False, t_other=thread, opened_socket=opened_socket)
-            results.put(True)
-        results = Queue()
-        t_parent = Thread(target=run_function, args=(pkt, timeout, flt, 0, None, results, None), name="send_and_sniff 1")
-        t_child = Thread(target=run_function, args=(pkt, timeout, flt, 1, t_parent, results, opened_socket), name="send_and_sniff 2")
-        t_parent.start()
-        t_child.start()
-        t_parent.join(timeout=3)
-        t_child.join(timeout=3)
-        assert results.qsize() >= 2
-        while not results.empty():
-            assert results.get()
+assert r
 
-retry_test(lambda: send_and_sniff(IP(dst="secdev.org")/ICMP()))
-retry_test(lambda: send_and_sniff(IP(dst="secdev.org")/ICMP(), flt="icmp"))
-retry_test(lambda: send_and_sniff(Ether()/IP(dst="secdev.org")/ICMP()))
+= GH issue 3306
+~ netaccess needs_root
+
+send(fuzz(ARP()))
 
 = Test SuperSocket.select
 ~ select
@@ -1721,7 +1740,7 @@ assert _test_select()
 True
 
 = Test set of sent_time by sr
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
     packet = IP(dst="8.8.8.8")/ICMP()
     r = sr(packet, timeout=2)
@@ -1730,7 +1749,7 @@ def _test():
 retry_test(_test)
 
 = Test set of sent_time by sr (multiple packets)
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
     packet1 = IP(dst="8.8.8.8")/ICMP()
     packet2 = IP(dst="8.8.4.4")/ICMP()
@@ -1741,7 +1760,7 @@ def _test():
 retry_test(_test)
 
 = Test set of sent_time by srflood
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
     packet = IP(dst="8.8.8.8")/ICMP()
     r = srflood(packet, timeout=2)
@@ -1750,7 +1769,7 @@ def _test():
 retry_test(_test)
 
 = Test set of sent_time by srflood (multiple packets)
-~ netaccess IP ICMP
+~ netaccess needs_root IP ICMP
 def _test():
     packet1 = IP(dst="8.8.8.8")/ICMP()
     packet2 = IP(dst="8.8.4.4")/ICMP()
@@ -1823,6 +1842,41 @@ assert Ether in pktpcapngdefaults[0]
 pktcapng = sniff(offline=scapy_path("/test/pcaps/macos.pcapng.gz"))
 assert len(pktcapng) != 0
 
+= Write a pcapng
+
+tmpfile = get_temp_file(autoext=".pcapng")
+r = RawPcapNgWriter(tmpfile)
+r._write_block_shb()
+r._write_block_idb()
+ts = 1632568366.384185
+r._write_block_epb(raw(Ether()/"Hello Scapy!!!"), ts)
+r.f.close()
+
+assert os.stat(tmpfile).st_size == 108
+
+l = rdpcap(tmpfile)
+assert b"Scapy" in l[0][Raw].load
+assert l[0].time == ts
+
+= Check wrpcapng()
+
+tmpfile = get_temp_file(autoext=".pcapng")
+p = Ether()/"Hello Scapy!!!"
+p.time = 1632568366.384185
+wrpcapng(tmpfile, p)
+
+assert os.stat(tmpfile).st_size == 108
+
+l = rdpcap(tmpfile)
+assert b"Scapy" in l[0][Raw].load
+assert l[0].time == ts
+
+p = Ether() / IPv6() / TCP()
+p.comment = b"Hello Scapy!"
+wrpcapng(tmpfile, p)
+l = rdpcap(tmpfile)
+assert l[0].comment.strip() == p.comment
+
 = Read a pcap file with wirelen != captured len
 pktpcapwirelen = rdpcap(pcapwirelenfile)
 
@@ -1894,6 +1948,21 @@ pktpcap_tcp = sniff(offline=fdesc, filter="tcp")
 fdesc.close()
 assert list(pktpcap[TCP]) == list(pktpcap_tcp)
 os.unlink(filename)
+
+= Check offline sniff() with a PcapNg file and a filter (by file object)
+~ tcpdump
+
+pcapng_data = b'\n\r\r\n`\x00\x00\x00M<+\x1a\x01\x00\x00\x00\xff\xff\xff\xff\xff\xff\xff\xff\x04\x009\x00TShark (Wireshark) 3.2.3 (Git v3.2.3 packaged as 3.2.3-1)\x00\x00\x00\x00\x00\x00\x00`\x00\x00\x00\x01\x00\x00\x00\x14\x00\x00\x00\xe4\x00\x00\x00\xff\xff\x00\x00\x14\x00\x00\x00\x06\x00\x00\x00<\x00\x00\x00\x00\x00\x00\x00\x98\xcd\x05\x00\x19\x83\xf7\x9e\x1c\x00\x00\x00\x1c\x00\x00\x00E\x00\x00\x1c\x00\x01\x00\x00@\x11|\xce\x7f\x00\x00\x01\x7f\x00\x00\x01\x005\x005\x00\x08\x01r<\x00\x00\x00'
+
+fdesc, filename = tempfile.mkstemp()
+os.close(fdesc)
+fd = open(filename, "wb")
+fd.write(pcapng_data)
+fd.close()
+
+packets = sniff(offline=filename, filter="udp")
+os.unlink(filename)
+assert(UDP in packets[0])
 
 = Check offline sniff() with Packets and tcpdump
 ~ tcpdump
@@ -2057,6 +2126,29 @@ assert r.linktype == DLT_EN10MB
 
 l = [ p for p in RawPcapReader(f) ]
 assert len(l) == 1
+
+= Check RawPcapReader on pcap
+~ pcap
+
+fd = get_temp_file()
+wrpcap(fd, [Ether()/IP()/ICMP()])
+assert len([p for p in RawPcapReader(fd)]) == 1
+
+for (x, y) in RawPcapReader(fd):
+    pass
+
+= Check RawPcapWriter
+~ pcap
+
+# GH3256
+fd = get_temp_file()
+with RawPcapWriter(fd, linktype=1) as w:
+    w.write(b"test")
+
+fd = get_temp_file()
+with RawPcapWriter(fd) as w:
+    w.write(b"test")
+    assert w.linktype == 1
 
 = Check tcpdump()
 ~ tcpdump
@@ -2230,7 +2322,7 @@ assert len(conf.temp_files) == tempfile_count
 
 
 = Run scapy's tshark command
-~ netaccess
+~ needs_root
 tshark(count=1, timeout=3)
 
 = Check wireshark()
@@ -2290,6 +2382,53 @@ with mock.patch("scapy.utils.warning") as warning:
     os.remove(filename)
     assert any("Inconsistent" in arg for arg in warning.call_args[0])
 
+############
+############
++ ERF Ethernet format support 
+
+= Variable creations
+erffile = BytesIO(b'3;!E_9\x92_\x02\x04\x00p\x00\x00\x00P\x00\x00\x00\x0fS?\xca\xc0\x1cjz\x18\x90\xed\x81\x00\x01:\x08\x00E\x00\x00(\xdf\xab@\x00;\x06\xb3s\n\x01]\xdb\n\xfb9\xda\xc3v\x84\xecD\x16\xb9\xab\xda\xa1b\xf9P\x10f\x98\x18\xcb\x00\x00\x00\x00\x90\x9e\xd7\xd2_\x929_\x0f\x9e\xcd\x1f\x01\x88\xb9\x15[/s<\x01\x88\xb9\x15[/\xcd\x1f\x01\x88\xb9\x15[/0\xcd"E_9\x92_\x02\x04\x00p\x00\x00\x00P\x00\x00\x1cjz\x18\x90\xed\x00\x0fS?\xca\xc0\x08\x00E\x00\x00(\xa2\xdd@\x00@\x06\xebA\n\xfb9\xda\n\x01]\xdb\x84\xec\xc3v\xda\xa1b\xf9D\x16\xb9\xacP\x10\x9a\xf0\xe4q\x00\x00\x00\x00\x00\x00\x00\x00o\xbc\xe2{_\x929_\x0f\x9f+3\x01\x88\xb9\x15u\x1e(^\x01\x88\xb9\x15u\x1e+3\x01\x88\xb9\x15u\x1e')
+erffilewithheader = BytesIO(b'4;!E_9\x92_\x82\x00\x00x\x00\x00\x00P\x00\x00\x1a+<M^o\x00\x00\x00\x0fS?\xca\xc0\x1cjz\x18\x90\xed\x81\x00\x01:\x08\x00E\x00\x00(\xdf\xab@\x00;\x06\xb3s\n\x01]\xdb\n\xfb9\xda\xc3v\x84\xecD\x16\xb9\xab\xda\xa1b\xf9P\x10f\x98\x18\xcb\x00\x00\x00\x00\x90\x9e\xd7\xd2_\x929_\x0f\x9e\xcd\x1f\x01\x88\xb9\x15[/s<\x01\x88\xb9\x15[/\xcd\x1f\x01\x88\xb9\x15[/0\xcd"E_9\x92_\x82\x00\x00x\x00\x00\x00P\x00\x00\x1a+<M^o\x00\x00\x1cjz\x18\x90\xed\x00\x0fS?\xca\xc0\x08\x00E\x00\x00(\xa2\xdd@\x00@\x06\xebA\n\xfb9\xda\n\x01]\xdb\x84\xec\xc3v\xda\xa1b\xf9D\x16\xb9\xacP\x10\x9a\xf0\xe4q\x00\x00\x00\x00\x00\x00\x00\x00o\xbc\xe2{_\x929_\x0f\x9f+3\x01\x88\xb9\x15u\x1e(^\x01\x88\xb9\x15u\x1e+3\x01\x88\xb9\x15u\x1e')
+
+= Check reading of ERF Ethernet file
+pkterf = rderf(erffile)
+assert pkterf[0].time == 1603418463.270038318
+assert pkterf[0][IP].src == "10.1.93.219"
+assert pkterf[0][IP].dst == "10.251.57.218"
+assert pkterf[0][Ether].src == "1c:6a:7a:18:90:ed"
+assert pkterf[0][Ether].dst == "00:0f:53:3f:ca:c0"
+
+= Check writing of ERF Ethernet file
+import os, tempfile
+fdesc, filename = tempfile.mkstemp()
+fdesc = os.fdopen(fdesc, "wb")
+wrerf(fdesc, pkterf)
+fdesc.close()
+newpkterf = rderf(filename)
+
+assert pkterf[1][Ether].src == newpkterf[1][Ether].src
+
+assert len(pkterf) == len(newpkterf)
+assert newpkterf[0].time is not None
+assert newpkterf[0].wirelen is not None
+assert newpkterf[0].time == pkterf[0].time
+assert newpkterf[0].wirelen == pkterf[0].wirelen
+assert newpkterf[1].time is not None
+assert newpkterf[1].wirelen is not None
+assert newpkterf[1].time == pkterf[1].time
+assert newpkterf[1].wirelen == pkterf[1].wirelen
+
+_, filename = tempfile.mkstemp()
+wrerf(filename, pkterf, append=True)
+wrerf(filename, pkterf, append=True)
+newdoublepkterf = rderf(filename)
+
+assert len(newpkterf) * 2 == len(newdoublepkterf)
+
+= Check rderf
+pkterf = rderf(erffilewithheader)
+assert pkterf[1].time == 1603418463.270062279
+assert pkterf[1][Ether].src == "00:0f:53:3f:ca:c0"
 
 ############
 ############
@@ -3925,6 +4064,24 @@ assert(len(a.list) == 1)
 b = TestPacket()
 assert(len(b.list) == 0)
 
+= Test PacketListField deepcopy
+class SubPacket(Packet):
+    name = "SubPacket"
+    fields_desc = [
+        ByteField("mem", 1),
+    ]
+
+class TestPacket(Packet):
+    name = "TestPacket"
+    fields_desc = [
+        PacketListField("packlist", SubPacket(), SubPacket),
+    ]
+
+a = TestPacket()
+b = a.copy()
+fuzz(b)
+assert(a.packlist[0].mem == 1)
+
 = PacketField
 
 class InnerPacket(Packet):
@@ -4259,7 +4416,9 @@ assert all(bytes(a[0]) == bytes(b[0]) for a, b in zip(unp, srl))
 = plot()
 
 import mock
-@mock.patch("scapy.plist.plt")
+import scapy.libs.matplot
+
+@mock.patch("scapy.libs.matplot.plt")
 def test_plot(mock_plt):
     def fake_plot(data, **kwargs):
         return data
@@ -4273,7 +4432,9 @@ test_plot()
 = diffplot()
 
 import mock
-@mock.patch("scapy.plist.plt")
+import scapy.libs.matplot
+
+@mock.patch("scapy.libs.matplot.plt")
 def test_diffplot(mock_plt):
     def fake_plot(data, **kwargs):
         return data
@@ -4287,7 +4448,9 @@ test_diffplot()
 = multiplot()
 
 import mock
-@mock.patch("scapy.plist.plt")
+import scapy.libs.matplot
+
+@mock.patch("scapy.libs.matplot.plt")
 def test_multiplot(mock_plt):
     def fake_plot(data, **kwargs):
         return data

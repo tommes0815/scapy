@@ -28,9 +28,10 @@ IF "%_args%" == "" (
     exit 1
   )
   REM Run tox
-  %PYTHON% -m tox -- -K tcpdump -K manufdb -K wireshark -K ci_only
+  %PYTHON% -m tox -- -K tcpdump -K manufdb -K wireshark -K ci_only -K automotive_comm
   pause
   exit 0
 )
 REM ### Start UTScapy normally ###
 %PYTHON% "%MYDIR%\scapy\tools\UTscapy.py" %_args%
+PAUSE

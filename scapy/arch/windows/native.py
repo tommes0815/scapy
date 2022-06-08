@@ -49,7 +49,7 @@ import socket
 import subprocess
 import time
 
-from scapy.automaton import SelectableObject, select_objects
+from scapy.automaton import select_objects
 from scapy.arch.windows.structures import GetIcmpStatistics
 from scapy.compat import raw
 from scapy.config import conf
@@ -61,14 +61,14 @@ from scapy.supersocket import SuperSocket
 # Watch out for import loops (inet...)
 
 
-class L3WinSocket(SuperSocket, SelectableObject):
+class L3WinSocket(SuperSocket):
     desc = "a native Layer 3 (IPv4) raw socket under Windows"
     nonblocking_socket = True
-    __selectable_force_select__ = True
+    __selectable_force_select__ = True  # see automaton.py
     __slots__ = ["promisc", "cls", "ipv6", "proto"]
 
     def __init__(self, iface=None, proto=socket.IPPROTO_IP,
-                 ttl=128, ipv6=False, promisc=True, **kwargs):
+                 ttl=128, ipv6=False, promisc=None, **kwargs):
         from scapy.layers.inet import IP
         from scapy.layers.inet6 import IPv6
         for kwarg in kwargs:
@@ -85,6 +85,8 @@ class L3WinSocket(SuperSocket, SelectableObject):
         # On Windows, with promisc=False, you won't get much
         self.ipv6 = ipv6
         self.cls = IPv6 if ipv6 else IP
+        if promisc is None:
+            promisc = conf.sniff_promisc
         self.promisc = promisc
         # Notes:
         # - IPPROTO_RAW only works to send packets.
